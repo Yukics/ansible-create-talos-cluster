@@ -7,7 +7,7 @@
     - conf/proxmox.yaml
   vars_prompt:
     - name: proxmox_api_password
-      prompt: "Proxmox password: "
+      prompt: "Proxmox password"
       private: true
   tasks:
     # Intall:
@@ -19,7 +19,7 @@
         api_host: "{{ proxmox_api_host }}"
         api_port: "{{ proxmox_api_port }}"
         vmid: "{{ item.id }}"
-        node: "{{ proxmox_vm_node }}"
+        node: "{{ item.node }}"
         name: "{{ item.name }}"
         state: stopped
         force: true
@@ -36,7 +36,7 @@
         api_host: "{{ proxmox_api_host }}"
         api_port: "{{ proxmox_api_port }}"
         vmid: "{{ item.id }}"
-        node: "{{ proxmox_vm_node }}"
+        node: "{{ item.node }}"
         name: "{{ item.name }}"
         state: absent
         force: true
@@ -46,3 +46,4 @@
       changed_when: true
       ansible.builtin.shell: |
         rm -rf _out
+        rm -f kubeconfig

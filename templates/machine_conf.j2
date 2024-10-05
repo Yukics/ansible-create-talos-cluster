@@ -1,10 +1,14 @@
 machine:
+  kubelet:
+    extraArgs:
+      rotate-server-certificates: true
   features:
     rbac: true
   network:
     hostname: {{ item.1.name }}
     interfaces:
       - interface: {{ item.0.stdout | from_json | json_query('if') }}
+        dhcp: false
         addresses:
           - {{ item.1.ip }}/24
         routes:

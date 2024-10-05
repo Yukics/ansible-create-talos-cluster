@@ -7,11 +7,12 @@
     - conf/proxmox.yaml
   vars_prompt:
     - name: proxmox_api_password
-      prompt: "Proxmox password: "
+      prompt: "Proxmox password"
       private: true
   tasks:
     # Intall:
     #   pip install proxmoxer
+    #   curl -sL https://talos.dev/install | sh
     - name: Create Proxmox VM Controlplanes
       community.general.proxmox_kvm:
         api_user: "{{ proxmox_api_user }}"
@@ -59,6 +60,7 @@
 
     # Admito que es un poco magia negra
     - name: Get control planes net info
+      changed_when: false
       ansible.builtin.shell: |
         set -o pipefail
         PROXMOX_IP="{{ proxmox_api_host }}"
@@ -74,22 +76,20 @@
         export NODE="{{ item.node }}"
         export VM_ID="{{ item.id }}"
         VM_AGENT_INFO=$(curl -k -s -b "PVEAuthCookie=$TICKET" "https://${PROXMOX_IP}:8006/api2/json/nodes/${NODE}/qemu/${VM_ID}/agent/network-get-interfaces")
-        IP_ADDRESS=$(echo $VM_AGENT_INFO | jq -r '.data.result[] | select(.name != "lo") | select(has("ip-addresses")) \
-          | .["ip-addresses"][] | select(.["ip-address-type"] == "ipv4") \
-          | select(.["ip-address"] | startswith("192")) | .["ip-address"] ')
-        IF_NAME=$(echo $VM_AGENT_INFO | jq -r '.data.result[] | select(.name != "lo") | select(has("ip-addresses"))\
-          | select(.name | startswith("en")) | .name')
+        IP_ADDRESS=$(echo $VM_AGENT_INFO | jq -r '.data.result[] | select(.name != "lo") | select(has("ip-addresses")) | .["ip-addresses"][] | select(.["ip-address-type"] == "ipv4") | select(.["ip-address"] | startswith("192")) | .["ip-address"] ')
+        IF_NAME=$(echo $VM_AGENT_INFO | jq -r '.data.result[] | select(.name != "lo") | select(has("ip-addresses")) | select(.name | startswith("en")) | .name')
         echo "{\"ip\": \"$IP_ADDRESS\", \"if\": \"$IF_NAME\"}"
       loop: "{{ controlplanes }}"
       register: cp_ips
-      changed_when: cp_ips.rc != 0
 
     - name: Get config
       changed_when: true
       ansible.builtin.shell: |
         export CONTROL_PLANE_IP="{{ cp_ips.results[0].stdout | from_json | json_query('ip') }}"
-        talosctl gen config talos-proxmox-cluster https://$CONTROL_PLANE_IP:6443 --output-dir _out \
-          --install-image factory.talos.dev/installer/ce4c980550dd2ab1b17bbf2b08801c7eb59418eafe8f279833297925d67c7515:v1.8.0
+        if ! [ -d _out ]; then
+          talosctl gen config talos-proxmox-cluster https://$CONTROL_PLANE_IP:6443 --output-dir _out --force \
+            --install-image factory.talos.dev/installer/ce4c980550dd2ab1b17bbf2b08801c7eb59418eafe8f279833297925d67c7515:v1.8.0
+        fi
 
     - name: Generate config patches controlplanes endpoint
       ansible.builtin.template:
@@ -182,10 +182,8 @@
         export NODE="{{ item.node }}"
         export VM_ID="{{ item.id }}"
         VM_AGENT_INFO=$(curl -k -s -b "PVEAuthCookie=$TICKET" "https://${PROXMOX_IP}:8006/api2/json/nodes/${NODE}/qemu/${VM_ID}/agent/network-get-interfaces")
-        IP_ADDRESS=$(echo $VM_AGENT_INFO | jq -r '.data.result[] | select(.name != "lo") | select(has("ip-addresses")) \
-          | .["ip-addresses"][] | select(.["ip-address-type"] == "ipv4") | select(.["ip-address"] | startswith("192")) | .["ip-address"] ')
-        IF_NAME=$(echo $VM_AGENT_INFO | jq -r '.data.result[] | select(.name != "lo") | select(has("ip-addresses"))\
-          | select(.name | startswith("en")) | .name')
+        IP_ADDRESS=$(echo $VM_AGENT_INFO | jq -r '.data.result[] | select(.name != "lo") | select(has("ip-addresses")) | .["ip-addresses"][] | select(.["ip-address-type"] == "ipv4") | select(.["ip-address"] | startswith("192")) | .["ip-address"] ')
+        IF_NAME=$(echo $VM_AGENT_INFO | jq -r '.data.result[] | select(.name != "lo") | select(has("ip-addresses"))| select(.name | startswith("en")) | .name')
         echo "{\"ip\": \"$IP_ADDRESS\", \"if\": \"$IF_NAME\"}"
       loop: "{{ workers }}"
       register: wor_ips
@@ -221,4 +219,16 @@
         talosctl bootstrap
         rm -f kubeconfig
         talosctl kubeconfig .
-        mv ~/.kube/config ~/.kube/config.$(date +%Y%m%d-%H%M%s)
+        if [ -z ~/.kube/config ]; then mv ~/.kube/config ~/.kube/config.$(date +%Y%m%d-%H%M%s); fi
+        cp -a kubeconfig ~/.kube/config
+
+    - name: Wait 1 min for bootstrap to finish
+      ansible.builtin.pause:
+        minutes: 1
+
+    - name: Set worker labels
+      changed_when: true
+      ansible.builtin.shell: |
+        export KUBECONFIG="~/.kube/config"
+        kubectl label node {{ item.name }} node-role.kubernetes.io/worker=""
+      loop: "{{ workers }}"
