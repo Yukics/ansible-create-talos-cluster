@@ -1,0 +1,17 @@
+machine:
+  features:
+    rbac: true
+  network:
+    hostname: {{ item.1.name }}
+    interfaces:
+      - interface: {{ item.0.stdout | from_json | json_query('if') }}
+        addresses:
+          - {{ item.1.ip }}/24
+        routes:
+          - network: 0.0.0.0/0
+            gateway: {{ gateway }}
+            metric: 1024 
+    nameservers:
+{% for ip in dns %}
+      -  {{ ip }}
+{% endfor %}

@@ -1,0 +1,48 @@
+- name: Destroy talos Cluster in Proxmox
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - conf/infra-talos.yaml
+    - conf/proxmox.yaml
+  vars_prompt:
+    - name: proxmox_api_password
+      prompt: "Proxmox password: "
+      private: true
+  tasks:
+    # Intall:
+    #   pip install proxmoxer
+    - name: Stop Proxmox VMs
+      community.general.proxmox_kvm:
+        api_user: "{{ proxmox_api_user }}"
+        api_password: "{{ proxmox_api_password }}"
+        api_host: "{{ proxmox_api_host }}"
+        api_port: "{{ proxmox_api_port }}"
+        vmid: "{{ item.id }}"
+        node: "{{ proxmox_vm_node }}"
+        name: "{{ item.name }}"
+        state: stopped
+        force: true
+      loop: "{{ controlplanes + workers }}"
+
+    - name: Wait 2 min for VMs to stop
+      ansible.builtin.pause:
+        minutes: 2
+
+    - name: Destroy Proxmox VMs
+      community.general.proxmox_kvm:
+        api_user: "{{ proxmox_api_user }}"
+        api_password: "{{ proxmox_api_password }}"
+        api_host: "{{ proxmox_api_host }}"
+        api_port: "{{ proxmox_api_port }}"
+        vmid: "{{ item.id }}"
+        node: "{{ proxmox_vm_node }}"
+        name: "{{ item.name }}"
+        state: absent
+        force: true
+      loop: "{{ controlplanes + workers }}"
+
+    - name: Remove files
+      changed_when: true
+      ansible.builtin.shell: |
+        rm -rf _out

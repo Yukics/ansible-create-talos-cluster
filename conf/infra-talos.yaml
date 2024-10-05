@@ -1,0 +1,48 @@
+gateway: 192.168.69.1
+dns: 
+  - 192.168.69.1
+  - 1.1.1.1
+controlplanes:
+  - name: "talos01"
+    id: 201
+    ip: 192.168.69.171
+    disk: 20
+    cores: 2
+    memory: 4096
+    node: camus
+  - name: "talos02"
+    id: 202
+    ip: 192.168.69.172
+    disk: 20
+    cores: 2
+    memory: 4096
+    node: camus
+  - name: "talos03"
+    id: 203
+    ip: 192.168.69.173
+    disk: 20
+    cores: 2
+    memory: 4096
+    node: camus
+workers:
+  - name: "w-talos01"
+    id: 301
+    ip: 192.168.69.174
+    disk: 20
+    cores: 2
+    memory: 4096
+    node: camus
+  - name: "w-talos02"
+    id: 302
+    ip: 192.168.69.175
+    disk: 20
+    cores: 2
+    memory: 4096
+    node: camus
+  - name: "w-talos03"
+    id: 303
+    ip: 192.168.69.176
+    disk: 20
+    cores: 2
+    memory: 4096
+    node: camus

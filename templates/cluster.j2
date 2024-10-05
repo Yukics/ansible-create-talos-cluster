@@ -1,0 +1,6 @@
+cluster:
+  controlPlane:
+    endpoint: https://{{ controlplanes[0].ip }}:6443
+  apiServer:
+    certSANs:
+      - {{ controlplanes[0].ip }}
