@@ -32,7 +32,7 @@
           ide2: "nas-nfs:iso/talos-guest-qemu.iso,media=cdrom"
         scsihw: virtio-scsi-single
         scsi:
-          scsi0: "local-lvm:{{ item.disk }},format=raw"
+          scsi0: "local-lvm:{{ item.disks[0] }},format=raw"
         storage: local-lvm
         state: present
         autostart: true
@@ -139,7 +139,8 @@
           ide2: "nas-nfs:iso/talos-guest-qemu.iso,media=cdrom"
         scsihw: virtio-scsi-single
         scsi:
-          scsi0: "local-lvm:{{ item.disk }},format=raw"
+          scsi0: "local-lvm:{{ item.disks[0] }},format=raw"
+          scsi1: "local-lvm:{{ item.disks[1] }},format=raw"
         storage: local-lvm
         state: present
         autostart: true
@@ -222,13 +223,23 @@
         if [ -z ~/.kube/config ]; then mv ~/.kube/config ~/.kube/config.$(date +%Y%m%d-%H%M%s); fi
         cp -a kubeconfig ~/.kube/config
 
-    - name: Wait 1 min for bootstrap to finish
+    - name: Wait 2 min for bootstrap to finish and workers to finish installing
       ansible.builtin.pause:
-        minutes: 1
+        minutes: 2
 
     - name: Set worker labels
       changed_when: true
       ansible.builtin.shell: |
-        export KUBECONFIG="~/.kube/config"
-        kubectl label node {{ item.name }} node-role.kubernetes.io/worker=""
+        export KUBECONFIG="kubeconfig"
+        kubectl label node {{ item.name }} node-role.kubernetes.io/worker="worker"
       loop: "{{ workers }}"
+
+    - name: Approve pending csr for kubelet cert rotation
+      changed_when: true
+      ansible.builtin.shell: |
+        set -o pipefail
+        export KUBECONFIG="kubeconfig"
+        for cert in `k get csr --no-headers=true | grep "system:node:{{ item.name }}" | awk '{print $1}'`; do
+          kubectl certificate approve $cert
+        done
+      loop: "{{ workers + controlplanes }}"
