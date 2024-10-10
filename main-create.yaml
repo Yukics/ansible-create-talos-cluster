@@ -12,7 +12,9 @@
   tasks:
     # Intall:
     #   pip install proxmoxer
+    #   kubectl
     #   curl -sL https://talos.dev/install | sh
+    #   dnf install helm
     - name: Create Proxmox VM Controlplanes
       community.general.proxmox_kvm:
         api_user: "{{ proxmox_api_user }}"
@@ -114,6 +116,7 @@
       loop: "{{ cp_ips.results | zip(controlplanes) | list }}"
 
     - name: Apply controlplanes config
+      ignore_errors: true
       changed_when: true
       ansible.builtin.shell: |
         export CONTROL_PLANE_IP="{{ item.0.stdout | from_json | json_query('ip') }}"
@@ -204,6 +207,7 @@
       loop: "{{ wor_ips.results | zip(workers) | list }}"
 
     - name: Apply workers config
+      ignore_errors: true
       changed_when: true
       ansible.builtin.shell: |
         export WORKER_IP="{{ item.0.stdout | from_json | json_query('ip') }}"
@@ -214,24 +218,26 @@
       changed_when: true
       ansible.builtin.shell: |
         export TALOSCONFIG="_out/talosconfig"
-        export CONTROL_PLANE_IP="{{ controlplanes[0].ip }}"
-        talosctl config endpoint $CONTROL_PLANE_IP
-        talosctl config node $CONTROL_PLANE_IP
+        talosctl config endpoint {{ controlplanes[0].ip }}
+        talosctl config node {{ controlplanes[0].ip }}
         talosctl bootstrap
         rm -f kubeconfig
         talosctl kubeconfig .
         if [ -z ~/.kube/config ]; then mv ~/.kube/config ~/.kube/config.$(date +%Y%m%d-%H%M%s); fi
         cp -a kubeconfig ~/.kube/config
+        talosctl config endpoint {{ controlplanes | map(attribute='ip') | join(' ') }}
+        talosctl config node {{ (controlplanes + workers) | map(attribute='ip') | join(' ') }}
 
-    - name: Wait 2 min for bootstrap to finish and workers to finish installing
+    - name: Wait 4 min for bootstrap to finish and workers to finish installing
       ansible.builtin.pause:
-        minutes: 2
+        minutes: 4
 
     - name: Set worker labels
       changed_when: true
       ansible.builtin.shell: |
         export KUBECONFIG="kubeconfig"
         kubectl label node {{ item.name }} node-role.kubernetes.io/worker="worker"
+        kubectl label node {{ item.name }} node-role.kubernetes.io/storage-node="storage-node"
       loop: "{{ workers }}"
 
     - name: Approve pending csr for kubelet cert rotation
@@ -243,3 +249,13 @@
           kubectl certificate approve $cert
         done
       loop: "{{ workers + controlplanes }}"
+
+    - name: Install and setup ceph using helm operator
+      changed_when: true
+      ansible.builtin.shell: |
+        export KUBECONFIG="kubeconfig"
+        helm repo add rook-release https://charts.rook.io/release
+        helm install --create-namespace --namespace rook-ceph rook-ceph rook-release/rook-ceph
+        #kubectl label namespace rook-ceph pod-security.kubernetes.io/enforce=privileged
+        helm install --create-namespace --namespace rook-ceph rook-ceph-cluster \
+          --set operatorNamespace=rook-ceph rook-release/rook-ceph-cluster -f conf/ceph.yaml

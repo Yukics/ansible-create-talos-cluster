@@ -1,0 +1,44 @@
+machine:
+  kubelet:
+    extraArgs:
+      rotate-server-certificates: true
+{% set workers_names = workers | map(attribute='name') | list %} 
+{% if item.1.name in workers_names %}
+    extraMounts:
+      - destination: /var/mnt/storage
+        type: bind
+        source: /var/mnt/storage
+        options:
+          - bind
+          - rshared
+          - rw
+  disks:
+    - device: /dev/sda
+        partitions:
+          - mountpoint: /var/mnt/storage
+    - device: /dev/sdb # The name of the disk to use.
+      partitions:
+        - mountpoint: /var/mnt/ceph # Where to mount the partition.
+{% endif %}
+  features:
+    rbac: true
+  network:
+    hostname: {{ item.1.name }}
+    interfaces:
+      - interface: {{ item.0.stdout | from_json | json_query('if') }}
+        dhcp: false
+{% set controlplanes_names = controlplanes | map(attribute='name') | list %} 
+{% if item.1.name in controlplanes_names %}
+        vip: 
+          ip: {{ vip_controlplane }}
+{% endif %}
+        addresses:
+          - {{ item.1.ip }}/24
+        routes:
+          - network: 0.0.0.0/0
+            gateway: {{ gateway }}
+            metric: 1024 
+    nameservers:
+{% for ip in dns %}
+      -  {{ ip }}
+{% endfor %}

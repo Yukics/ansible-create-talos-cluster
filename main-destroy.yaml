@@ -13,6 +13,7 @@
     # Intall:
     #   pip install proxmoxer
     - name: Stop Proxmox VMs
+      ignore_errors: true
       community.general.proxmox_kvm:
         api_user: "{{ proxmox_api_user }}"
         api_password: "{{ proxmox_api_password }}"
